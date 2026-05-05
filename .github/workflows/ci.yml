@@ -65,22 +65,8 @@ jobs:
         with:
           terraform_version: "1.7.5"
 
-      - name: Restore Terraform state
-        uses: actions/cache@v4
-        with:
-          path: terraform/terraform.tfstate
-          key: terraform-state-${{ github.ref_name }}
-          restore-keys: terraform-state-
-
       - name: Terraform Init
         run: make init
 
       - name: Terraform Apply
         run: make apply-auto
-
-      - name: Save Terraform state
-        uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: terraform/terraform.tfstate
-          key: terraform-state-${{ github.ref_name }}-${{ github.run_id }}
