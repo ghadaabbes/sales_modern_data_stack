@@ -43,6 +43,37 @@ RAW.ORDERS
 
 Also runs **data quality tests**: `order_id` must be unique and not null.
 
+#### dbt Models in Detail
+
+**`fact_sales`** — The central fact table
+
+Filters raw orders and keeps only **completed** ones, discarding cancelled or pending orders:
+
+```sql
+SELECT order_id, customer_id, order_date, amount, status, country
+FROM stg_orders
+WHERE status = 'completed'
+```
+
+**`sales_daily_kpi`** — The business aggregation
+
+Built on top of `fact_sales`, it answers the core business question: **how much did we sell, where, and when?**
+
+```sql
+SELECT
+  order_date,
+  country,
+  COUNT(DISTINCT order_id) AS total_orders,
+  SUM(amount)              AS revenue
+FROM fact_sales
+GROUP BY order_date, country
+```
+
+| Model | Grain | Business question |
+|---|---|---|
+| `fact_sales` | 1 row = 1 completed order | Which orders are valid? |
+| `sales_daily_kpi` | 1 row = 1 day + 1 country | What is the revenue by date and country? |
+
 ---
 
 ### 4. Airflow — Orchestration
