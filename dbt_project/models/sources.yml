@@ -1,0 +1,26 @@
+version: 2
+
+sources:
+  - name: raw
+    database: DWH
+    schema: RAW
+    tables:
+      - name: ORDERS
+
+models:
+  - name: stg_orders
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+
+  - name: fact_sales
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique

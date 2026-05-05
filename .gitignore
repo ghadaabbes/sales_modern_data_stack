@@ -1,0 +1,25 @@
+# Secrets locaux
+terraform/variables.dev.tfvars
+dbt_project/profiles.yml
+
+# Terraform state & cache
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/crash.log
+
+# dbt generated
+dbt_project/target/
+dbt_project/logs/
+dbt_project/.user.yml
+
+# Logs
+logs/
+terraform/logs/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.env

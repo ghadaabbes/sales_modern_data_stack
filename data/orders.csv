@@ -1,0 +1,6 @@
+order_id,customer_id,order_date,amount,status,country
+1,C001,2025-01-01,120.50,completed,FR
+2,C002,2025-01-02,80.00,completed,FR
+3,C001,2025-01-03,40.00,cancelled,FR
+4,C003,2025-01-04,220.00,completed,DE
+5,C004,2025-01-05,150.00,completed,ES

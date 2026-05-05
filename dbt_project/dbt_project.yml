@@ -1,0 +1,16 @@
+name: sales_modern_data_stack
+version: "1.0"
+config-version: 2
+
+profile: sales_modern_data_stack
+
+model-paths: ["models"]
+
+models:
+  sales_modern_data_stack:
+    staging:
+      +schema: STAGING
+      +materialized: view
+    marts:
+      +schema: MARTS
+      +materialized: table
