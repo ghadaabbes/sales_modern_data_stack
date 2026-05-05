@@ -1,28 +1,3 @@
-import {
-  to = snowflake_database.dwh
-  id = "DWH"
-}
-
-import {
-  to = snowflake_schema.raw
-  id = "DWH.RAW"
-}
-
-import {
-  to = snowflake_schema.staging
-  id = "DWH.STAGING"
-}
-
-import {
-  to = snowflake_schema.marts
-  id = "DWH.MARTS"
-}
-
-import {
-  to = snowflake_warehouse.transform_wh
-  id = "TRANSFORM_WH"
-}
-
 resource "snowflake_database" "dwh" {
   name = "DWH"
 }
