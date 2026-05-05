@@ -15,7 +15,7 @@ variable "snowflake_password" {
 variable "snowflake_role" {
   description = "The Snowflake role to use for authentication"
   type        = string
-  default     = "SYSADMIN"
+  default     = "ACCOUNTADMIN"
 }
 
 variable "organization_name" {
