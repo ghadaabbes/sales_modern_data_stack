@@ -1,4 +1,4 @@
-# Modern Data Stack — Terraform + Snowflake + dbt + Airflow
+# Modern Data Stack : Terraform + Snowflake + dbt + Airflow
 
 An end-to-end data pipeline for sales analytics, built with the Modern Data Stack. It starts from a raw CSV file and delivers business KPIs in Snowflake, fully automated and reproducible.
 
