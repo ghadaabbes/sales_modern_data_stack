@@ -68,13 +68,5 @@ jobs:
       - name: Terraform Init
         run: make init
 
-      - name: Import existing Snowflake resources
-        run: |
-          terraform import snowflake_database.dwh "DWH" || true
-          terraform import snowflake_warehouse.transform_wh "TRANSFORM_WH" || true
-          terraform import snowflake_schema.raw "DWH.RAW" || true
-          terraform import snowflake_schema.staging "DWH.STAGING" || true
-          terraform import snowflake_schema.marts "DWH.MARTS" || true
-
       - name: Terraform Apply
         run: make apply-auto

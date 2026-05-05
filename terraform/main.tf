@@ -1,3 +1,28 @@
+import {
+  to = snowflake_database.dwh
+  id = "DWH"
+}
+
+import {
+  to = snowflake_schema.raw
+  id = "DWH.RAW"
+}
+
+import {
+  to = snowflake_schema.staging
+  id = "DWH.STAGING"
+}
+
+import {
+  to = snowflake_schema.marts
+  id = "DWH.MARTS"
+}
+
+import {
+  to = snowflake_warehouse.transform_wh
+  id = "TRANSFORM_WH"
+}
+
 resource "snowflake_database" "dwh" {
   name = "DWH"
 }
@@ -18,9 +43,8 @@ resource "snowflake_schema" "marts" {
 }
 
 resource "snowflake_warehouse" "transform_wh" {
-  name = "TRANSFORM_WH"
+  name           = "TRANSFORM_WH"
   warehouse_size = "XSMALL"
-  auto_resume = true
-  auto_suspend = 60
-  
+  auto_resume    = true
+  auto_suspend   = 60
 }
