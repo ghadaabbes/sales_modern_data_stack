@@ -1,5 +1,5 @@
 resource "snowflake_database" "dwh" {
-    name = "DWH" 
+  name = "DWH"
 }
 
 resource "snowflake_schema" "raw" {
