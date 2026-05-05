@@ -19,11 +19,9 @@ env:
   TF_VAR_organization_name:     ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}
 
 jobs:
-  # ── Sur Pull Request : vérification + plan ──────────────────────────────────
   terraform-check:
     name: Validate & Plan
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     defaults:
       run:
         working-directory: terraform/
@@ -47,60 +45,4 @@ jobs:
         run: make validate
 
       - name: Terraform Plan
-        id: plan
         run: make plan
-        continue-on-error: true
-
-      - name: Post plan en commentaire PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const output = `#### Terraform Plan \`${{ steps.plan.outcome }}\`
-            <details><summary>Voir le plan complet</summary>
-
-            \`\`\`
-            ${{ steps.plan.outputs.stdout }}
-            \`\`\`
-            </details>`;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            });
-
-      - name: Echec si plan KO
-        if: steps.plan.outcome == 'failure'
-        run: exit 1
-
-  # ── Sur push main : déploiement automatique ──────────────────────────────────
-  terraform-apply:
-    name: Apply
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    defaults:
-      run:
-        working-directory: terraform/
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.7.5"
-
-      - name: Terraform Init
-        run: make init
-
-      - name: Import existing Snowflake resources
-        run: |
-          terraform import snowflake_database.dwh DWH || true
-          terraform import snowflake_warehouse.transform_wh TRANSFORM_WH || true
-          terraform import 'snowflake_schema.raw' 'DWH|RAW' || true
-          terraform import 'snowflake_schema.staging' 'DWH|STAGING' || true
-          terraform import 'snowflake_schema.marts' 'DWH|MARTS' || true
-
-      - name: Terraform Apply
-        run: make apply-auto
