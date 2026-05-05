@@ -61,7 +61,7 @@ Runs inside Docker using a custom image with dbt pre-installed.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  1. TERRAFORM (once)                                    │
-│     terraform apply → creates DWH, RAW, STAGING,       │
+│     terraform apply → creates DWH, RAW, STAGING,        │
 │                        MARTS, TRANSFORM_WH in Snowflake │
 └────────────────────┬────────────────────────────────────┘
                      │
