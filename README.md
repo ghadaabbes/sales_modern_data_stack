@@ -6,7 +6,7 @@ An end-to-end data pipeline for sales analytics, built with the Modern Data Stac
 
 ## Technologies & Their Roles
 
-### 1. Terraform — Infrastructure as Code
+### 1. Terraform - Infrastructure as Code
 **Role:** provisions all Snowflake resources before anything else runs.
 
 What it creates:
@@ -18,18 +18,18 @@ What it creates:
 
 ---
 
-### 2. Snowflake — Cloud Data Warehouse
+### 2. Snowflake - Cloud Data Warehouse
 **Role:** stores and computes data. Organized into 3 layers:
 
 | Schema | Content | Populated by |
 |---|---|---|
-| `RAW` | `ORDERS` — raw CSV data, never modified | Python script |
-| `STAGING` | `stg_orders` — cleaned, filtered (non-null order_id) | dbt (view) |
-| `MARTS` | `fact_sales`, `sales_daily_kpi` — ready for analysis | dbt (table) |
+| `RAW` | `ORDERS` - raw CSV data, never modified | Python script |
+| `STAGING` | `stg_orders` - cleaned, filtered (non-null order_id) | dbt (view) |
+| `MARTS` | `fact_sales`, `sales_daily_kpi` - ready for analysis | dbt (table) |
 
 ---
 
-### 3. dbt — ELT Transformation
+### 3. dbt - ELT Transformation
 **Role:** transforms data already in Snowflake using SQL only.
 
 Model dependency flow:
@@ -45,7 +45,7 @@ Also runs **data quality tests**: `order_id` must be unique and not null.
 
 #### dbt Models in Detail
 
-**`fact_sales`** — The central fact table
+**`fact_sales`** - The central fact table
 
 Filters raw orders and keeps only **completed** ones, discarding cancelled or pending orders:
 
@@ -170,7 +170,7 @@ make apply-dev
 docker compose build
 docker compose up -d
 ```
-Open `http://localhost:8090` — login: `admin` / `admin`
+Open `http://localhost:8090` - login: `admin` / `admin`
 
 ### 3. Trigger the pipeline
 Enable and trigger the `snowflake_dbt_pipeline` DAG from the Airflow UI.
