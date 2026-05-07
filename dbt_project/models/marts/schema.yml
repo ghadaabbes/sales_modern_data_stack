@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: fact_sales
-    description: "Table de faits des ventes. Une ligne par commande. Enrichie avec dimensions temporelles et segmentation depuis int_orders_enriched."
+    description: "{{ doc('fact_sales') }}"
     meta:
       owner: "data-team"
     columns:
@@ -56,7 +56,7 @@ models:
           - not_null
 
   - name: agg_customers
-    description: "Agrégation par client avec LTV, segmentation RFM simplifiée et taux de complétion. Grain : 1 ligne par customer_id."
+    description: "{{ doc('agg_customers') }}"
     meta:
       owner: "data-team"
     columns:
@@ -112,7 +112,7 @@ models:
               max_value: 100
 
   - name: sales_daily_kpi
-    description: "KPIs de vente agrégés par jour et pays avec window functions (running total, croissance J/J-1, ranking). Grain : 1 ligne par (order_date, country)."
+    description: "{{ doc('sales_daily_kpi') }}"
     meta:
       owner: "data-team"
     columns:

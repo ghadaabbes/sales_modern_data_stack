@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: int_orders_enriched
-    description: "Commandes enrichies avec dimensions temporelles dérivées et segmentation de montant. Vue intermédiaire entre staging et marts."
+    description: "{{ doc('int_orders_enriched') }}"
     meta:
       owner: "data-team"
     columns:

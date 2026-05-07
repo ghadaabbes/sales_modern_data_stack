@@ -4,10 +4,11 @@ config-version: 2
 
 profile: sales_modern_data_stack
 
-model-paths: ["models"]
-macro-paths: ["macros"]
-test-paths: ["tests"]
-docs-paths: ["docs"]
+model-paths:    ["models"]
+macro-paths:    ["macros"]
+test-paths:     ["tests"]
+docs-paths:     ["docs"]
+snapshot-paths: ["snapshots"]
 
 on-run-start:
   - "{{ log('Starting dbt run — ' ~ run_started_at, info=true) }}"

@@ -2,12 +2,17 @@ version: 2
 
 sources:
   - name: raw
-    description: "Données brutes ingérées depuis la source transactionnelle dans le schéma RAW de Snowflake."
+    description: "{{ doc('source_raw') }}"
     database: DWH
     schema: RAW
+    # Freshness : alerte si aucune commande récente dans la source brute
+    freshness:
+      warn_after:  {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+    loaded_at_field: ORDER_DATE
     tables:
       - name: ORDERS
-        description: "Table brute des commandes clients."
+        description: "Table brute des commandes clients chargée depuis le système transactionnel."
         columns:
           - name: ORDER_ID
             description: "Identifiant unique de la commande."
@@ -24,7 +29,7 @@ sources:
 
 models:
   - name: stg_orders
-    description: "Commandes nettoyées et filtrées depuis RAW.ORDERS. Supprime les lignes sans order_id."
+    description: "{{ doc('stg_orders') }}"
     meta:
       owner: "data-team"
     columns:
