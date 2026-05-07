@@ -1,145 +1,147 @@
 # Modern Data Stack — Terraform + Snowflake + dbt + Airflow
 
-Pipeline de données end-to-end pour l'analytique commerciale. Part d'un fichier CSV brut et produit des KPIs métier dans Snowflake, entièrement automatisé et reproductible.
+End-to-end data pipeline for sales analytics. Starts from a raw CSV file and delivers business KPIs in Snowflake, fully automated and reproducible.
 
 ---
 
 ## Technologies
 
-| Outil | Rôle |
-|-------|------|
-| **Terraform** | Infrastructure as Code — provisionne Snowflake |
-| **Snowflake** | Data warehouse cloud — stockage et compute |
-| **dbt** | Transformations ELT — SQL versionné, testé, documenté |
-| **Airflow** | Orchestration — planifie et enchaîne les étapes |
+| Tool | Role |
+|------|------|
+| **Terraform** | Infrastructure as Code — provisions Snowflake resources |
+| **Snowflake** | Cloud data warehouse — storage and compute |
+| **dbt** | ELT transformations — versioned, tested, documented SQL |
+| **Airflow** | Orchestration — schedules and chains all steps |
 
 ---
 
-## Architecture dbt — 3 couches
+## dbt Architecture — 3 layers
 
 ```
 RAW.ORDERS (Snowflake)
- └── stg_orders              [STAGING · view]   nettoyage, filtrage
-       └── int_orders_enriched [STAGING · view]   dimensions temporelles, segmentation
-             ├── fact_sales        [MARTS · table]  table de faits centrale
-             │     ├── agg_customers     [MARTS · table]  LTV, segmentation client (RFM)
-             │     └── sales_daily_kpi   [MARTS · table]  KPIs journaliers, window functions
-             └── orders_snapshot   [SNAPSHOTS]      SCD Type 2 sur status + amount
+ └── stg_orders              [STAGING · view]   cleaning, filtering
+       └── int_orders_enriched [STAGING · view]   time dimensions, segmentation
+             ├── fact_sales        [MARTS · table]  central fact table
+             │     ├── agg_customers     [MARTS · table]  LTV, RFM customer segmentation
+             │     └── sales_daily_kpi   [MARTS · table]  daily KPIs, window functions
+             └── orders_snapshot   [SNAPSHOTS]      SCD Type 2 on status + amount
 ```
 
-### Modèles en détail
+### Models in detail
 
-| Modèle | Couche | Grain | Description |
-|--------|--------|-------|-------------|
-| `stg_orders` | Staging | 1 commande | Nettoyage et filtrage depuis RAW.ORDERS |
-| `int_orders_enriched` | Intermediate | 1 commande | `order_year/month/quarter`, `day_of_week`, `amount_bucket`, `is_completed` |
-| `fact_sales` | Marts | 1 commande | Table de faits enrichie, base de tous les marts |
-| `agg_customers` | Marts | 1 client | LTV, panier moyen, segment RFM, taux de complétion |
-| `sales_daily_kpi` | Marts | (date, pays) | Revenue, running total, croissance J/J-1, ranking pays |
+| Model | Layer | Grain | Description |
+|-------|-------|-------|-------------|
+| `stg_orders` | Staging | 1 order | Cleaning and filtering from RAW.ORDERS |
+| `int_orders_enriched` | Intermediate | 1 order | `order_year/month/quarter`, `day_of_week`, `amount_bucket`, `is_completed` |
+| `fact_sales` | Marts | 1 order | Enriched fact table, base for all marts |
+| `agg_customers` | Marts | 1 customer | LTV, avg order value, RFM segment, completion rate |
+| `sales_daily_kpi` | Marts | (date, country) | Revenue, running total, day-over-day growth, country ranking |
 
-### Snapshot SCD Type 2
+### SCD Type 2 Snapshot
 
-`orders_snapshot` — track chaque changement de `status` ou `amount` avec `dbt_valid_from` / `dbt_valid_to`.
+`orders_snapshot` — tracks every change of `status` or `amount` with `dbt_valid_from` / `dbt_valid_to`.
 
 ---
 
-## Tests qualité
+## Data Quality Tests
 
-### Tests génériques (schema.yml)
-- `not_null`, `unique`, `accepted_values` sur toutes les colonnes clés
-- `dbt_expectations.expect_column_values_to_be_between` sur les montants
-- `dbt_expectations.expect_column_values_to_be_of_type` sur les dates
+### Generic tests (schema.yml)
+- `not_null`, `unique`, `accepted_values` on all key columns
+- `dbt_expectations.expect_column_values_to_be_between` on amounts
+- `dbt_expectations.expect_column_values_to_be_of_type` on dates
 
-### Tests singuliers (tests/)
+### Singular tests (tests/)
 
-| Test | Ce qu'il vérifie |
-|------|-----------------|
-| `assert_no_duplicate_daily_kpi` | Grain unique `(order_date, country)` dans `sales_daily_kpi` |
-| `assert_revenue_positive` | Aucun montant négatif dans `fact_sales` |
-| `assert_ltv_equals_sum_of_orders` | Cohérence LTV entre `agg_customers` et `fact_sales` |
-| `assert_running_total_monotonic` | `revenue_running_total` toujours croissant par pays |
-| `assert_all_customers_in_agg` | Aucun client orphelin entre `fact_sales` et `agg_customers` |
+| Test | What it checks |
+|------|----------------|
+| `assert_no_duplicate_daily_kpi` | Unique grain `(order_date, country)` in `sales_daily_kpi` |
+| `assert_revenue_positive` | No negative amounts in `fact_sales` |
+| `assert_ltv_equals_sum_of_orders` | LTV consistency between `agg_customers` and `fact_sales` |
+| `assert_running_total_monotonic` | `revenue_running_total` always increasing per country |
+| `assert_all_customers_in_agg` | No orphan customers between `fact_sales` and `agg_customers` |
 
 ### Source freshness
-Surveillance automatique de `RAW.ORDERS` :
-- **Warning** si pas de nouvelles données depuis 24h
-- **Erreur** si pas de nouvelles données depuis 48h
+Automatic monitoring of `RAW.ORDERS`:
+- **Warning** if no new data for 24h
+- **Error** if no new data for 48h
 
 ---
 
-## Environnements dbt
+## dbt Environments
 
-Le projet supporte deux cibles configurées dans `profiles.yml` via variables d'environnement.
+The project supports two targets configured in `profiles.yml` via environment variables.
 
-| Variable | Obligatoire | Défaut |
-|----------|-------------|--------|
-| `DBT_SNOWFLAKE_PASSWORD` | Oui | — |
-| `DBT_SNOWFLAKE_ACCOUNT` | Non | `GOERPYE-DR90600` |
-| `DBT_SNOWFLAKE_USER` | Non | `GHADAAB` |
-| `DBT_SNOWFLAKE_ROLE` | Non | `ACCOUNTADMIN` (dev) / `TRANSFORMER` (prod) |
-| `DBT_SNOWFLAKE_DATABASE` | Non | `DWH` |
-| `DBT_SNOWFLAKE_WAREHOUSE` | Non | `TRANSFORM_WH` |
+| Variable | Required | Default |
+|----------|----------|---------|
+| `DBT_SNOWFLAKE_PASSWORD` | Yes | — |
+| `DBT_SNOWFLAKE_ACCOUNT` | No | `GOERPYE-DR90600` |
+| `DBT_SNOWFLAKE_USER` | No | `GHADAAB` |
+| `DBT_SNOWFLAKE_ROLE` | No | `ACCOUNTADMIN` (dev) / `TRANSFORMER` (prod) |
+| `DBT_SNOWFLAKE_DATABASE` | No | `DWH` |
+| `DBT_SNOWFLAKE_WAREHOUSE` | No | `TRANSFORM_WH` |
 
-```bash
-# Dev (défaut)
+```powershell
+# Dev (default)
 dbt run
 
 # Prod (CI/CD)
 dbt run --target prod
 ```
 
-| Paramètre | dev | prod |
+| Parameter | dev | prod |
 |-----------|-----|------|
 | Role | `ACCOUNTADMIN` | `TRANSFORMER` |
 | Threads | 4 | 8 |
-| Target par défaut | Oui | Non |
+| Default target | Yes | No |
 
 ---
 
-## Schémas Snowflake
+## Snowflake Schemas
 
-| Schéma | Contenu | Alimenté par |
+| Schema | Content | Populated by |
 |--------|---------|--------------|
-| `RAW` | `ORDERS` — données brutes CSV | Script Python |
+| `RAW` | `ORDERS` — raw CSV data | Python script |
 | `STAGING` | `stg_orders`, `int_orders_enriched` | dbt (views) |
 | `MARTS` | `fact_sales`, `agg_customers`, `sales_daily_kpi` | dbt (tables) |
 | `SNAPSHOTS` | `orders_snapshot` | dbt snapshot |
 
 ---
 
-## Flux d'exécution
+## Execution Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  1. TERRAFORM (une fois)                                    │
+│  1. TERRAFORM (once)                                        │
 │     terraform apply → DWH, RAW, STAGING, MARTS, SNAPSHOTS  │
-│                        TRANSFORM_WH                         │
+│                        TRANSFORM_WH, TRANSFORMER role       │
 └────────────────────────┬────────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────────┐
-│  2. AIRFLOW (toutes les nuits à minuit)                     │
+│  2. AIRFLOW (every night at midnight)                       │
 │                                                             │
-│   load_orders_to_raw  →  dbt run  →  dbt test              │
+│   load_orders_to_raw → dbt run → dbt snapshot → dbt test   │
 │                                                             │
-│   dbt run construit dans l'ordre :                         │
-│     stg_orders → int_orders_enriched                       │
-│       → fact_sales → agg_customers                         │
-│                    → sales_daily_kpi                       │
+│   dbt run builds in order:                                  │
+│     stg_orders → int_orders_enriched                        │
+│       → fact_sales → agg_customers                          │
+│                    → sales_daily_kpi                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Structure du projet
+## Project Structure
 
 ```
 .
-├── terraform/                      # Infrastructure Snowflake (IaC)
-│   ├── main.tf
+├── terraform/                      # Snowflake infrastructure (IaC)
+│   ├── main.tf                     # Resources: DB, schemas, warehouse, roles, grants
 │   ├── variables.tf
+│   ├── variables.dev.tfvars        # Dev values (gitignored)
+│   ├── variables.prod.tfvars       # Prod values
 │   ├── providers.tf
 │   └── makefile
-├── dbt_project/                    # Transformations SQL
+├── dbt_project/                    # SQL transformations
 │   ├── models/
 │   │   ├── staging/
 │   │   │   ├── stg_orders.sql
@@ -154,14 +156,14 @@ dbt run --target prod
 │   │       └── schema.yml
 │   ├── snapshots/
 │   │   └── orders_snapshot.sql     # SCD Type 2
-│   ├── tests/                      # Tests singuliers cross-modèles
+│   ├── tests/                      # Cross-model singular tests
 │   │   ├── assert_no_duplicate_daily_kpi.sql
 │   │   ├── assert_revenue_positive.sql
 │   │   ├── assert_ltv_equals_sum_of_orders.sql
 │   │   ├── assert_running_total_monotonic.sql
 │   │   └── assert_all_customers_in_agg.sql
 │   ├── docs/
-│   │   └── overview.md             # Doc blocks pour dbt docs
+│   │   └── overview.md             # dbt doc blocks
 │   ├── macros/
 │   │   └── generate_schema_name.sql
 │   ├── packages.yml                # dbt-utils + dbt-expectations
@@ -179,65 +181,65 @@ dbt run --target prod
 
 ---
 
-## Démarrage
+## Getting Started
 
-### 1. Variables d'environnement (PowerShell)
+### 1. Set environment variables (PowerShell)
 
 ```powershell
-$env:DBT_SNOWFLAKE_PASSWORD = "ton_mot_de_passe"
-$env:SNOWFLAKE_PASSWORD     = "ton_mot_de_passe"
-$env:TF_VAR_snowflake_password = "ton_mot_de_passe"
+$env:DBT_SNOWFLAKE_PASSWORD    = "your_password"
+$env:SNOWFLAKE_PASSWORD        = "your_password"
+$env:TF_VAR_snowflake_password = "your_password"
 ```
 
-> Pour ne pas les retaper à chaque session, ajoute ces lignes dans `notepad $PROFILE`.
+> To avoid retyping every session, add these lines to `notepad $PROFILE`.
 
-### 2. Copier profiles.yml vers ~/.dbt/
+### 2. Copy profiles.yml to ~/.dbt/
 
 ```powershell
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.dbt"
 Copy-Item "dbt_project\profiles.yml" "$env:USERPROFILE\.dbt\profiles.yml"
 ```
 
-### 3. Provisionner l'infrastructure Snowflake (une seule fois)
+### 3. Provision Snowflake infrastructure (once)
 
 ```powershell
-# make n'est pas disponible sur Windows — utiliser terraform directement
+# make is not available on Windows — use terraform directly
 Set-Location terraform
 terraform init
 terraform apply "-var-file=variables.dev.tfvars" -auto-approve
 Set-Location ..
 ```
 
-### 4. Charger les données brutes (avant dbt run)
+### 4. Load raw data (required before dbt run)
 
 ```powershell
 python scripts/load_orders_to_raw.py
-# → [OK] 6 lignes chargées dans DWH.RAW.ORDERS
+# → [OK] 6 rows loaded into DWH.RAW.ORDERS
 ```
 
-> Cette étape est obligatoire avant `dbt run` — dbt lit depuis `RAW.ORDERS`.
+> This step is mandatory before `dbt run` — dbt reads from `RAW.ORDERS`.
 
-### 5. Installer les packages dbt et construire les modèles
+### 5. Install dbt packages and build models
 
 ```powershell
 Set-Location dbt_project
-dbt deps        # installe dbt-utils + dbt-expectations
-dbt run         # crée toutes les tables/vues dans Snowflake
-dbt snapshot    # crée orders_snapshot (SCD Type 2)
-dbt test        # vérifie la qualité des données
+dbt deps        # install dbt-utils + dbt-expectations
+dbt run         # create all tables/views in Snowflake
+dbt snapshot    # create orders_snapshot (SCD Type 2)
+dbt test        # run all quality tests
 ```
 
-### 6. Lancer Airflow (automatisation nuit)
+### 6. Start Airflow
 
 ```powershell
 docker compose build
 docker compose up -d
 ```
-Ouvrir `http://localhost:8090` — login : `admin` / `admin`
+Open `http://localhost:8090` — login: `admin` / `admin`
 
-Activer et déclencher le DAG `snowflake_dbt_pipeline` depuis l'UI.
+Enable and trigger the `snowflake_dbt_pipeline` DAG from the UI.
 
-### 7. Consulter la documentation dbt en local
+### 7. Browse dbt documentation locally
 
 ```powershell
 dbt docs generate
@@ -247,44 +249,44 @@ dbt docs serve
 
 ---
 
-## Quand exécuter quoi
+## When to Run What
 
-| Tu modifies | Tu lances |
-|-------------|-----------|
-| Un modèle SQL (`*.sql`) | `dbt run` |
-| Un seul modèle | `dbt run -s nom_modele` |
-| Un modèle + ses dépendants | `dbt run -s +nom_modele` |
-| Les tests (`schema.yml`, `tests/`) | `dbt test` |
-| Le snapshot | `dbt snapshot` |
-| `packages.yml` | `dbt deps` puis `dbt run` |
-| Nouveau schéma / role / warehouse Snowflake | `terraform apply` |
-| Script Python ou DAG Airflow | Aucune commande — Airflow gère en prod |
+| You change | You run |
+|------------|---------|
+| A SQL model (`*.sql`) | `dbt run` |
+| A single model | `dbt run -s model_name` |
+| A model and its dependants | `dbt run -s +model_name` |
+| Tests (`schema.yml`, `tests/`) | `dbt test` |
+| Snapshot | `dbt snapshot` |
+| `packages.yml` | `dbt deps` then `dbt run` |
+| New Snowflake schema / role / warehouse | `terraform apply` |
+| Python script or Airflow DAG | Nothing — Airflow handles it in prod |
 
-> **Règle** : Terraform = infrastructure, dbt = données, Airflow = automatisation.
+> **Rule**: Terraform = infrastructure, dbt = data, Airflow = automation.
 
 ---
 
-## Commandes dbt utiles
+## Useful dbt Commands
 
 ```powershell
-# Construire tous les modèles (dev par défaut)
+# Build all models (dev by default)
 dbt run
 
-# Construire en prod
+# Build in prod
 dbt run --target prod
 
-# Cibler un seul modèle et ses dépendances
+# Target a single model and its dependencies
 dbt run -s +fact_sales
 
-# Lancer tous les tests (génériques + singuliers)
+# Run all tests (generic + singular)
 dbt test
 
-# Vérifier la fraîcheur de la source
+# Check source freshness
 dbt source freshness
 
-# Lancer le snapshot SCD Type 2
+# Run SCD Type 2 snapshot
 dbt snapshot
 
-# Documentation interactive
+# Interactive documentation
 dbt docs generate; dbt docs serve
 ```
