@@ -26,26 +26,26 @@ with_windows AS (
     avg_order_value,
     completed_orders,
 
-    -- Revenue cumulé par pays (running total)
+    -- Cumulative revenue per country (running total)
     SUM(revenue) OVER (
       PARTITION BY country
       ORDER BY order_date
       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS revenue_running_total,
 
-    -- Revenue de la veille (même pays)
+    -- Previous day revenue (same country)
     LAG(revenue) OVER (
       PARTITION BY country
       ORDER BY order_date
     ) AS revenue_prev_day,
 
-    -- Orders de la veille
+    -- Previous day order count
     LAG(total_orders) OVER (
       PARTITION BY country
       ORDER BY order_date
     ) AS orders_prev_day,
 
-    -- Classement des pays par revenue sur la journée
+    -- Country ranking by revenue for the day
     RANK() OVER (
       PARTITION BY order_date
       ORDER BY revenue DESC
@@ -66,13 +66,13 @@ SELECT
   orders_prev_day,
   country_revenue_rank,
 
-  -- Croissance revenue J vs J-1 (%)
+  -- Day-over-day revenue growth (%)
   ROUND(
     (revenue - revenue_prev_day) / NULLIF(revenue_prev_day, 0) * 100,
     2
   ) AS revenue_growth_pct,
 
-  -- Croissance orders J vs J-1 (%)
+  -- Day-over-day order count growth (%)
   ROUND(
     (total_orders - orders_prev_day) / NULLIF(orders_prev_day, 0) * 100,
     2

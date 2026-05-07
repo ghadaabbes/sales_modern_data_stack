@@ -10,9 +10,9 @@
     )
 }}
 
--- SCD Type 2 sur les commandes.
--- Capture chaque changement de statut ou de montant avec dbt_valid_from / dbt_valid_to.
--- Permet de retrouver l'état d'une commande à n'importe quelle date passée.
+-- SCD Type 2 on orders.
+-- Captures every change of status or amount with dbt_valid_from / dbt_valid_to.
+-- Allows querying the state of any order at any past date.
 SELECT
     order_id,
     customer_id,

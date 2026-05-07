@@ -9,10 +9,10 @@ from airflow.utils.trigger_rule import TriggerRule
 DBT_PROJECT_DIR = "/opt/airflow/dbt_project"
 SCRIPTS_DIR = "/opt/airflow/scripts"
 
-# Cible dbt — surcharger via Airflow Variable "dbt_target" pour passer en prod
+# dbt target — override via Airflow Variable "dbt_target" to switch to prod
 DBT_TARGET = Variable.get("dbt_target", default_var="dev")
 
-# Credentials Snowflake injectés depuis Airflow Variables (jamais en dur dans le code)
+# Snowflake credentials injected from Airflow Variables (never hardcoded)
 DBT_ENV = {
     "DBT_SNOWFLAKE_PASSWORD":  Variable.get("snowflake_password",  default_var=""),
     "DBT_SNOWFLAKE_ACCOUNT":   Variable.get("snowflake_account",   default_var="GOERPYE-DR90600"),
@@ -24,16 +24,16 @@ DBT_ENV = {
 
 
 def on_failure_callback(context: dict) -> None:
-    """Log structuré en cas d'échec — extensible vers Slack / PagerDuty."""
+    """Structured failure log — extensible to Slack / PagerDuty."""
     ti = context["task_instance"]
     logging.error(
-        "[%s] Task '%s' échouée | run_id=%s | log: %s",
+        "[%s] Task '%s' failed | run_id=%s | log: %s",
         ti.dag_id,
         ti.task_id,
         context["run_id"],
         ti.log_url,
     )
-    # Pour notifier Slack, décommenter et configurer SlackWebhookOperator ici
+    # To notify Slack, uncomment and configure SlackWebhookOperator here
 
 
 default_args = {
@@ -48,7 +48,7 @@ default_args = {
 
 with DAG(
     dag_id="snowflake_dbt_pipeline",
-    description="Pipeline ELT quotidien : RAW → staging → intermediate → marts + snapshot + tests + docs",
+    description="Daily ELT pipeline: RAW -> staging -> intermediate -> marts + snapshot + tests + docs",
     default_args=default_args,
     start_date=datetime(2025, 1, 1),
     schedule="@daily",
@@ -57,42 +57,42 @@ with DAG(
     doc_md="""
 ## snowflake_dbt_pipeline
 
-Pipeline ELT complet — s'exécute toutes les nuits à minuit.
+Full ELT pipeline — runs every night at midnight.
 
-### Flux d'exécution
+### Execution flow
 
 ```
 load_orders_to_raw
     └── dbt_source_freshness
-            ├── dbt_snapshot          ← SCD Type 2 en parallèle
+            ├── dbt_snapshot          ← SCD Type 2 in parallel
             └── dbt_run_staging
                     └── dbt_run_intermediate
                             └── dbt_run_marts
-                                    └── dbt_test  ← converge snapshot + marts
+                                    └── dbt_test  ← converges snapshot + marts
                                             └── dbt_docs_generate
 ```
 
-### Variables Airflow à configurer
+### Airflow Variables to configure
 | Variable | Description |
 |----------|-------------|
-| `dbt_target` | Cible dbt : `dev` (défaut) ou `prod` |
-| `snowflake_password` | Mot de passe Snowflake |
-| `snowflake_account` | Identifiant du compte Snowflake |
-| `snowflake_role` | Role Snowflake (`ACCOUNTADMIN` en dev) |
+| `dbt_target` | dbt target: `dev` (default) or `prod` |
+| `snowflake_password` | Snowflake password |
+| `snowflake_account` | Snowflake account identifier |
+| `snowflake_role` | Snowflake role (`ACCOUNTADMIN` in dev) |
     """,
 ) as dag:
 
-    # ─── 1. Chargement CSV → RAW ──────────────────────────────────────────────
+    # ─── 1. Load CSV → RAW ────────────────────────────────────────────────────
 
     load_orders = BashOperator(
         task_id="load_orders_to_raw",
         bash_command=f"python {SCRIPTS_DIR}/load_orders_to_raw.py",
         env=DBT_ENV,
         execution_timeout=timedelta(minutes=15),
-        doc_md="Charge `orders.csv` dans `DWH.RAW.ORDERS` via le script Python.",
+        doc_md="Loads `orders.csv` into `DWH.RAW.ORDERS` via the Python script.",
     )
 
-    # ─── 2. Fraîcheur source ──────────────────────────────────────────────────
+    # ─── 2. Source freshness ──────────────────────────────────────────────────
 
     source_freshness = BashOperator(
         task_id="dbt_source_freshness",
@@ -102,13 +102,13 @@ load_orders_to_raw
         ),
         env=DBT_ENV,
         doc_md=(
-            "Vérifie que `RAW.ORDERS` contient des données récentes.\n"
-            "- Warning si > 24h\n"
-            "- Erreur si > 48h"
+            "Checks that `RAW.ORDERS` contains recent data.\n"
+            "- Warning if > 24h\n"
+            "- Error if > 48h"
         ),
     )
 
-    # ─── 3a. Snapshot SCD Type 2 (parallèle avec staging) ────────────────────
+    # ─── 3a. SCD Type 2 snapshot (parallel with staging) ─────────────────────
 
     dbt_snapshot = BashOperator(
         task_id="dbt_snapshot",
@@ -118,12 +118,12 @@ load_orders_to_raw
         ),
         env=DBT_ENV,
         doc_md=(
-            "Exécute `orders_snapshot` (SCD Type 2).\n"
-            "Capture chaque changement de `status` ou `amount` dans `SNAPSHOTS`."
+            "Runs `orders_snapshot` (SCD Type 2).\n"
+            "Captures every change of `status` or `amount` into `SNAPSHOTS`."
         ),
     )
 
-    # ─── 3b. Transformations par couche ──────────────────────────────────────
+    # ─── 3b. Layer-by-layer transformations ──────────────────────────────────
 
     dbt_run_staging = BashOperator(
         task_id="dbt_run_staging",
@@ -132,7 +132,7 @@ load_orders_to_raw
             f"dbt run --select staging --target {DBT_TARGET}"
         ),
         env=DBT_ENV,
-        doc_md="Construit `stg_orders` (view) dans le schéma STAGING.",
+        doc_md="Builds `stg_orders` (view) in the STAGING schema.",
     )
 
     dbt_run_intermediate = BashOperator(
@@ -143,7 +143,7 @@ load_orders_to_raw
         ),
         env=DBT_ENV,
         doc_md=(
-            "Construit `int_orders_enriched` — dimensions temporelles "
+            "Builds `int_orders_enriched` — time dimensions "
             "(year, month, quarter, week), `amount_bucket`, `is_completed`."
         ),
     )
@@ -156,14 +156,14 @@ load_orders_to_raw
         ),
         env=DBT_ENV,
         doc_md=(
-            "Construit en parallèle dans Snowflake :\n"
-            "- `fact_sales` — table de faits centrale\n"
-            "- `agg_customers` — LTV, segmentation RFM\n"
-            "- `sales_daily_kpi` — KPIs journaliers + window functions"
+            "Builds in parallel in Snowflake:\n"
+            "- `fact_sales` — central fact table\n"
+            "- `agg_customers` — LTV, RFM segmentation\n"
+            "- `sales_daily_kpi` — daily KPIs + window functions"
         ),
     )
 
-    # ─── 4. Tests qualité (converge snapshot + marts) ─────────────────────────
+    # ─── 4. Quality tests (converges snapshot + marts) ────────────────────────
 
     dbt_test = BashOperator(
         task_id="dbt_test",
@@ -174,13 +174,13 @@ load_orders_to_raw
         env=DBT_ENV,
         trigger_rule=TriggerRule.ALL_SUCCESS,
         doc_md=(
-            "Lance tous les tests :\n"
-            "- Tests génériques : `not_null`, `unique`, `accepted_values`, `dbt_expectations`\n"
-            "- Tests singuliers : cohérence LTV, revenue positif, grain unique, running total monotone"
+            "Runs all tests:\n"
+            "- Generic: `not_null`, `unique`, `accepted_values`, `dbt_expectations`\n"
+            "- Singular: LTV consistency, positive revenue, unique grain, monotonic running total"
         ),
     )
 
-    # ─── 5. Génération documentation ─────────────────────────────────────────
+    # ─── 5. Documentation generation ─────────────────────────────────────────
 
     dbt_docs = BashOperator(
         task_id="dbt_docs_generate",
@@ -189,10 +189,10 @@ load_orders_to_raw
             f"dbt docs generate --target {DBT_TARGET}"
         ),
         env=DBT_ENV,
-        doc_md="Génère `catalog.json` + `manifest.json`. Consulter via `dbt docs serve` en local.",
+        doc_md="Generates `catalog.json` + `manifest.json`. Browse via `dbt docs serve` locally.",
     )
 
-    # ─── Dépendances ──────────────────────────────────────────────────────────
+    # ─── Dependencies ─────────────────────────────────────────────────────────
     #
     #   load_orders
     #       └── source_freshness

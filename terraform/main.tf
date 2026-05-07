@@ -1,6 +1,6 @@
-# ── Import des ressources existantes ──────────────────────────────────────────
-# Ces blocs permettent à Terraform de reprendre des ressources déjà dans Snowflake.
-# À conserver — si la ressource est déjà dans l'état, Terraform ignore le bloc.
+# ── Import existing resources ──────────────────────────────────────────────────
+# These blocks allow Terraform to take over resources already in Snowflake.
+# Safe to keep — if the resource is already in state, Terraform ignores the block.
 
 import {
   to = snowflake_database.dwh
@@ -27,59 +27,59 @@ import {
   id = "TRANSFORM_WH"
 }
 
-# ── Base de données ────────────────────────────────────────────────────────────
+# ── Database ───────────────────────────────────────────────────────────────────
 
 resource "snowflake_database" "dwh" {
   name    = "DWH"
-  comment = "Data warehouse principal — contient toutes les couches de données."
+  comment = "Main data warehouse — contains all data layers."
 }
 
-# ── Schémas ───────────────────────────────────────────────────────────────────
+# ── Schemas ────────────────────────────────────────────────────────────────────
 
 resource "snowflake_schema" "raw" {
   name     = "RAW"
   database = snowflake_database.dwh.name
-  comment  = "Données brutes ingérées telles quelles — jamais modifiées."
+  comment  = "Raw data ingested as-is — never modified."
 }
 
 resource "snowflake_schema" "staging" {
   name     = "STAGING"
   database = snowflake_database.dwh.name
-  comment  = "Vues de nettoyage dbt (stg_*, int_*)."
+  comment  = "dbt cleaning views (stg_*, int_*)."
 }
 
 resource "snowflake_schema" "marts" {
   name     = "MARTS"
   database = snowflake_database.dwh.name
-  comment  = "Tables analytiques dbt prêtes pour la BI (fact_*, agg_*, *_kpi)."
+  comment  = "dbt analytical tables ready for BI (fact_*, agg_*, *_kpi)."
 }
 
 resource "snowflake_schema" "snapshots" {
   name     = "SNAPSHOTS"
   database = snowflake_database.dwh.name
-  comment  = "Snapshots SCD Type 2 gérés par dbt (orders_snapshot)."
+  comment  = "SCD Type 2 snapshots managed by dbt (orders_snapshot)."
 }
 
-# ── Warehouse de compute ───────────────────────────────────────────────────────
+# ── Compute warehouse ──────────────────────────────────────────────────────────
 
 resource "snowflake_warehouse" "transform_wh" {
   name           = "TRANSFORM_WH"
   warehouse_size = "XSMALL"
   auto_resume    = true
   auto_suspend   = 60
-  comment        = "Warehouse dédié aux transformations dbt. Auto-suspend après 60s."
+  comment        = "Dedicated dbt transformation warehouse. Auto-suspend after 60s."
 }
 
-# ── Role TRANSFORMER (prod) ────────────────────────────────────────────────────
-# Role à privilèges réduits utilisé en production (profiles.yml --target prod).
-# Nom correct pour provider snowflake-labs/snowflake >= 1.0.0 : snowflake_account_role
+# ── TRANSFORMER role (prod) ────────────────────────────────────────────────────
+# Least-privilege role used in production (profiles.yml --target prod).
+# Unlike ACCOUNTADMIN, it only has access to what dbt needs.
 
 resource "snowflake_account_role" "transformer" {
   name    = "TRANSFORMER"
-  comment = "Role de transformation dbt — utilisé en production uniquement."
+  comment = "dbt transformation role — used in production only."
 }
 
-# Usage sur le warehouse
+# Usage on warehouse
 resource "snowflake_grant_privileges_to_account_role" "transformer_warehouse" {
   account_role_name = snowflake_account_role.transformer.name
   privileges        = ["USAGE"]
@@ -90,7 +90,7 @@ resource "snowflake_grant_privileges_to_account_role" "transformer_warehouse" {
   }
 }
 
-# Usage sur la database
+# Usage on database
 resource "snowflake_grant_privileges_to_account_role" "transformer_database" {
   account_role_name = snowflake_account_role.transformer.name
   privileges        = ["USAGE"]
@@ -101,7 +101,7 @@ resource "snowflake_grant_privileges_to_account_role" "transformer_database" {
   }
 }
 
-# RAW : lecture seule
+# RAW: read-only (dbt source)
 resource "snowflake_grant_privileges_to_account_role" "transformer_schema_raw" {
   account_role_name = snowflake_account_role.transformer.name
   privileges        = ["USAGE"]
@@ -111,7 +111,7 @@ resource "snowflake_grant_privileges_to_account_role" "transformer_schema_raw" {
   }
 }
 
-# STAGING : lecture + création de vues/tables
+# STAGING: read + create views/tables (dbt builds stg_* and int_* here)
 resource "snowflake_grant_privileges_to_account_role" "transformer_schema_staging" {
   account_role_name = snowflake_account_role.transformer.name
   privileges        = ["USAGE", "CREATE TABLE", "CREATE VIEW"]
@@ -121,7 +121,7 @@ resource "snowflake_grant_privileges_to_account_role" "transformer_schema_stagin
   }
 }
 
-# MARTS : lecture + création de tables
+# MARTS: read + create tables (dbt builds fact_*, agg_*, *_kpi here)
 resource "snowflake_grant_privileges_to_account_role" "transformer_schema_marts" {
   account_role_name = snowflake_account_role.transformer.name
   privileges        = ["USAGE", "CREATE TABLE", "CREATE VIEW"]
@@ -131,7 +131,7 @@ resource "snowflake_grant_privileges_to_account_role" "transformer_schema_marts"
   }
 }
 
-# SNAPSHOTS : lecture + création de tables
+# SNAPSHOTS: read + create tables (dbt snapshot writes here)
 resource "snowflake_grant_privileges_to_account_role" "transformer_schema_snapshots" {
   account_role_name = snowflake_account_role.transformer.name
   privileges        = ["USAGE", "CREATE TABLE"]
@@ -141,15 +141,15 @@ resource "snowflake_grant_privileges_to_account_role" "transformer_schema_snapsh
   }
 }
 
-# ── Outputs ───────────────────────────────────────────────────────────────────
+# ── Outputs ────────────────────────────────────────────────────────────────────
 
 output "database_name" {
-  description = "Nom de la database Snowflake."
+  description = "Snowflake database name."
   value       = snowflake_database.dwh.name
 }
 
 output "schemas" {
-  description = "Liste des schémas provisionnés."
+  description = "List of provisioned schemas."
   value = {
     raw       = snowflake_schema.raw.name
     staging   = snowflake_schema.staging.name
@@ -159,11 +159,11 @@ output "schemas" {
 }
 
 output "warehouse_name" {
-  description = "Nom du warehouse de compute dbt."
+  description = "dbt compute warehouse name."
   value       = snowflake_warehouse.transform_wh.name
 }
 
 output "transformer_role" {
-  description = "Role prod à assigner aux utilisateurs de transformation."
+  description = "Prod role to assign to transformation users."
   value       = snowflake_account_role.transformer.name
 }

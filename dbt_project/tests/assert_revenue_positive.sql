@@ -1,5 +1,5 @@
--- Vérifie qu'aucune commande n'a un montant négatif dans fact_sales.
--- Un montant négatif indiquerait une erreur d'ingestion ou un remboursement mal codé.
+-- Checks that no order has a negative amount in fact_sales.
+-- A negative amount would indicate an ingestion error or a badly coded refund.
 SELECT
     order_id,
     amount

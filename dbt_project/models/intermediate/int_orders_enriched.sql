@@ -13,14 +13,14 @@ SELECT
   status,
   country,
 
-  -- Dimensions temporelles dérivées
+  -- Derived time dimensions
   DATE_TRUNC('year',    order_date) AS order_year,
   DATE_TRUNC('month',   order_date) AS order_month,
   DATE_TRUNC('quarter', order_date) AS order_quarter,
   DAYOFWEEK(order_date)             AS day_of_week,
   WEEKOFYEAR(order_date)            AS week_of_year,
 
-  -- Segmentation du montant
+  -- Amount bucket segmentation
   CASE
     WHEN amount < 50   THEN 'small'
     WHEN amount < 200  THEN 'medium'
@@ -28,7 +28,7 @@ SELECT
     ELSE               'premium'
   END AS amount_bucket,
 
-  -- Flag commande complétée
+  -- Completed order flag
   CASE WHEN status = 'completed' THEN 1 ELSE 0 END AS is_completed
 
 FROM {{ ref('stg_orders') }}

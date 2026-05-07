@@ -1,5 +1,5 @@
--- Vérifie l'unicité du grain (order_date, country) dans sales_daily_kpi.
--- Ce test échoue si des doublons existent sur la clé composite.
+-- Checks uniqueness of the grain (order_date, country) in sales_daily_kpi.
+-- Fails if any duplicates exist on the composite key.
 SELECT
     order_date,
     country,

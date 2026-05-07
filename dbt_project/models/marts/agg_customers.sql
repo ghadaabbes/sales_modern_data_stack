@@ -34,10 +34,10 @@ rfm AS (
     completed_orders,
     non_completed_orders,
 
-    -- Recency : jours depuis la dernière commande
+    -- Recency: days since last order
     DATEDIFF('day', last_order_date, CURRENT_DATE) AS days_since_last_order,
 
-    -- Segmentation client (simplifié RFM)
+    -- Simplified RFM customer segmentation
     CASE
       WHEN total_orders = 1                                          THEN 'one-time'
       WHEN total_orders <= 3 AND lifetime_value < 500               THEN 'occasional'
@@ -46,7 +46,7 @@ rfm AS (
       ELSE                                                            'regular'
     END AS customer_segment,
 
-    -- Taux de complétion des commandes
+    -- Order completion rate
     ROUND(completed_orders / NULLIF(total_orders, 0) * 100, 2) AS completion_rate_pct
 
   FROM customer_orders

@@ -1,5 +1,5 @@
--- Vérifie la cohérence cross-modèles : le lifetime_value dans agg_customers
--- doit correspondre exactement à la somme des montants dans fact_sales par client.
+-- Cross-model consistency check: lifetime_value in agg_customers
+-- must exactly match the sum of amounts in fact_sales per customer.
 WITH expected AS (
     SELECT
         customer_id,

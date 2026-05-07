@@ -1,5 +1,5 @@
--- Vérifie que le revenue_running_total est strictement croissant par pays.
--- Un running total qui diminue révèle une erreur dans la window function ou des données incohérentes.
+-- Checks that revenue_running_total is strictly increasing per country.
+-- A decreasing running total reveals an error in the window function or inconsistent data.
 WITH lagged AS (
     SELECT
         order_date,
