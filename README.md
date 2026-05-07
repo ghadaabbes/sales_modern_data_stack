@@ -181,43 +181,65 @@ dbt run --target prod
 
 ## Démarrage
 
-### 1. Variables d'environnement
+### 1. Variables d'environnement (PowerShell)
 
-```bash
-export DBT_SNOWFLAKE_PASSWORD="ton_mot_de_passe"
-# optionnel — surcharger les autres valeurs si besoin
-export DBT_SNOWFLAKE_ROLE="ACCOUNTADMIN"
+```powershell
+$env:DBT_SNOWFLAKE_PASSWORD = "ton_mot_de_passe"
+$env:SNOWFLAKE_PASSWORD     = "ton_mot_de_passe"
+$env:TF_VAR_snowflake_password = "ton_mot_de_passe"
 ```
 
-### 2. Provisionner l'infrastructure
+> Pour ne pas les retaper à chaque session, ajoute ces lignes dans `notepad $PROFILE`.
 
-```bash
-cd terraform
-make apply-dev
+### 2. Copier profiles.yml vers ~/.dbt/
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.dbt"
+Copy-Item "dbt_project\profiles.yml" "$env:USERPROFILE\.dbt\profiles.yml"
 ```
 
-### 3. Installer les packages dbt
+### 3. Provisionner l'infrastructure Snowflake (une seule fois)
 
-```bash
-cd dbt_project
-dbt deps
+```powershell
+# make n'est pas disponible sur Windows — utiliser terraform directement
+Set-Location terraform
+terraform init
+terraform apply "-var-file=variables.dev.tfvars" -auto-approve
+Set-Location ..
 ```
 
-### 4. Lancer Airflow
+### 4. Charger les données brutes (avant dbt run)
 
-```bash
+```powershell
+python scripts/load_orders_to_raw.py
+# → [OK] 6 lignes chargées dans DWH.RAW.ORDERS
+```
+
+> Cette étape est obligatoire avant `dbt run` — dbt lit depuis `RAW.ORDERS`.
+
+### 5. Installer les packages dbt et construire les modèles
+
+```powershell
+Set-Location dbt_project
+dbt deps        # installe dbt-utils + dbt-expectations
+dbt run         # crée toutes les tables/vues dans Snowflake
+dbt snapshot    # crée orders_snapshot (SCD Type 2)
+dbt test        # vérifie la qualité des données
+```
+
+### 6. Lancer Airflow (automatisation nuit)
+
+```powershell
 docker compose build
 docker compose up -d
 ```
 Ouvrir `http://localhost:8090` — login : `admin` / `admin`
 
-### 5. Déclencher le pipeline
+Activer et déclencher le DAG `snowflake_dbt_pipeline` depuis l'UI.
 
-Activer et déclencher le DAG `snowflake_dbt_pipeline` depuis l'UI Airflow.
+### 7. Consulter la documentation dbt en local
 
-### 6. Consulter la documentation dbt en local
-
-```bash
+```powershell
 dbt docs generate
 dbt docs serve
 # → http://localhost:8080
@@ -225,14 +247,34 @@ dbt docs serve
 
 ---
 
+## Quand exécuter quoi
+
+| Tu modifies | Tu lances |
+|-------------|-----------|
+| Un modèle SQL (`*.sql`) | `dbt run` |
+| Un seul modèle | `dbt run -s nom_modele` |
+| Un modèle + ses dépendants | `dbt run -s +nom_modele` |
+| Les tests (`schema.yml`, `tests/`) | `dbt test` |
+| Le snapshot | `dbt snapshot` |
+| `packages.yml` | `dbt deps` puis `dbt run` |
+| Nouveau schéma / role / warehouse Snowflake | `terraform apply` |
+| Script Python ou DAG Airflow | Aucune commande — Airflow gère en prod |
+
+> **Règle** : Terraform = infrastructure, dbt = données, Airflow = automatisation.
+
+---
+
 ## Commandes dbt utiles
 
-```bash
+```powershell
 # Construire tous les modèles (dev par défaut)
 dbt run
 
 # Construire en prod
 dbt run --target prod
+
+# Cibler un seul modèle et ses dépendances
+dbt run -s +fact_sales
 
 # Lancer tous les tests (génériques + singuliers)
 dbt test
@@ -244,8 +286,5 @@ dbt source freshness
 dbt snapshot
 
 # Documentation interactive
-dbt docs generate && dbt docs serve
-
-# Cibler un seul modèle et ses dépendances
-dbt run -s +fact_sales
+dbt docs generate; dbt docs serve
 ```
