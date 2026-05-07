@@ -1,35 +1,56 @@
 TERRAFORM_DIR := .
 
-# GitHub Secrets injectés comme variables d'environnement dans le workflow :
+# Credentials via variables d'environnement (jamais dans les fichiers tfvars) :
+#   export TF_VAR_snowflake_password="ton_mot_de_passe"
+# Terraform les lit automatiquement — aucun -var nécessaire.
+#
+# En CI/CD (GitHub Actions), ces variables viennent des GitHub Secrets :
 #   TF_VAR_snowflake_account      → secret SNOWFLAKE_ACCOUNT
 #   TF_VAR_snowflake_user         → secret SNOWFLAKE_USER
 #   TF_VAR_snowflake_password     → secret SNOWFLAKE_PASSWORD
 #   TF_VAR_organization_name      → secret SNOWFLAKE_ORGANIZATION_NAME
-# Terraform les lit automatiquement — aucun -var nécessaire ici.
 
-DEV_VARS := -var-file=variables.dev.tfvars
+DEV_VARS  := -var-file=variables.dev.tfvars
+PROD_VARS := -var-file=variables.prod.tfvars
 
-.PHONY: help check-env init fmt validate plan apply apply-auto plan-dev apply-dev destroy destroy-auto output clean
+.PHONY: help check-env init fmt validate \
+        plan apply apply-auto \
+        plan-dev apply-dev \
+        plan-prod apply-prod \
+        destroy destroy-auto output clean restart
 
 help:
-	@echo "Snowflake Terraform - targets disponibles :"
-	@echo "  check-env    - Vérifie que les variables d'environnement sont bien définies"
-	@echo "  init         - Initialise Terraform et télécharge les providers"
-	@echo "  fmt          - Formate les fichiers .tf"
-	@echo "  validate     - Valide la configuration Terraform"
-	@echo "  plan         - Aperçu des ressources à créer/modifier/supprimer"
-	@echo "  apply        - Applique le plan (avec confirmation)"
-	@echo "  apply-auto   - Applique le plan sans confirmation"
-	@echo "  destroy      - Supprime les ressources Snowflake (avec confirmation)"
-	@echo "  destroy-auto - Supprime les ressources sans confirmation"
-	@echo "  output       - Affiche les outputs Terraform"
-	@echo "  clean        - Supprime .terraform/ et les fichiers d'état locaux"
+	@echo ""
+	@echo "Snowflake Terraform — targets disponibles"
+	@echo "─────────────────────────────────────────"
+	@echo "  Général"
+	@echo "    check-env    Vérifie que TF_VAR_snowflake_password est défini"
+	@echo "    init         Initialise Terraform et télécharge les providers"
+	@echo "    fmt          Formate les fichiers .tf"
+	@echo "    validate     Valide la configuration Terraform"
+	@echo ""
+	@echo "  Dev (variables.dev.tfvars)"
+	@echo "    plan-dev     Aperçu des changements en dev"
+	@echo "    apply-dev    Applique en dev (avec confirmation)"
+	@echo ""
+	@echo "  Prod (variables.prod.tfvars)"
+	@echo "    plan-prod    Aperçu des changements en prod"
+	@echo "    apply-prod   Applique en prod (avec confirmation)"
+	@echo ""
+	@echo "  CI/CD"
+	@echo "    apply-auto   Applique sans confirmation (pour GitHub Actions)"
+	@echo ""
+	@echo "  Maintenance"
+	@echo "    output       Affiche les outputs (noms de ressources)"
+	@echo "    destroy      Supprime les ressources (avec confirmation)"
+	@echo "    clean        Supprime l'état local (.terraform/, tfstate)"
+	@echo "    restart      clean + init + apply-dev (repartir de zéro)"
+	@echo ""
 
 check-env:
-	@test -n "$(TF_VAR_snowflake_account)"   || (echo "ERROR: TF_VAR_snowflake_account manquant"   && exit 1)
-	@test -n "$(TF_VAR_snowflake_user)"      || (echo "ERROR: TF_VAR_snowflake_user manquant"      && exit 1)
-	@test -n "$(TF_VAR_snowflake_password)"  || (echo "ERROR: TF_VAR_snowflake_password manquant"  && exit 1)
-	@test -n "$(TF_VAR_organization_name)"   || (echo "ERROR: TF_VAR_organization_name manquant"   && exit 1)
+	@test -n "$(TF_VAR_snowflake_password)" || \
+		(echo "ERREUR : TF_VAR_snowflake_password non défini." && \
+		 echo "Lancer : export TF_VAR_snowflake_password='ton_mot_de_passe'" && exit 1)
 	@echo "Variables d'environnement OK."
 
 init:
@@ -41,33 +62,44 @@ fmt:
 validate: init
 	terraform -chdir=$(TERRAFORM_DIR) validate
 
-plan: check-env validate
-	terraform -chdir=$(TERRAFORM_DIR) plan
+# ── Dev ────────────────────────────────────────────────────────────────────────
 
-apply: check-env validate
-	terraform -chdir=$(TERRAFORM_DIR) apply
+plan-dev: check-env validate
+	terraform -chdir=$(TERRAFORM_DIR) plan $(DEV_VARS)
+
+apply-dev: check-env validate
+	terraform -chdir=$(TERRAFORM_DIR) apply $(DEV_VARS)
+
+# ── Prod ───────────────────────────────────────────────────────────────────────
+
+plan-prod: check-env validate
+	terraform -chdir=$(TERRAFORM_DIR) plan $(PROD_VARS)
+
+apply-prod: check-env validate
+	terraform -chdir=$(TERRAFORM_DIR) apply $(PROD_VARS)
+
+# ── CI/CD (sans confirmation interactive) ─────────────────────────────────────
 
 apply-auto: check-env validate
 	terraform -chdir=$(TERRAFORM_DIR) apply -auto-approve
 
-# ── Développement local (utilise variables.dev.tfvars) ──────────────────────
-plan-dev: validate
-	terraform -chdir=$(TERRAFORM_DIR) plan $(DEV_VARS)
-
-apply-dev: validate
-	terraform -chdir=$(TERRAFORM_DIR) apply $(DEV_VARS)
-
-destroy: check-env
-	terraform -chdir=$(TERRAFORM_DIR) destroy
-
-destroy-auto: check-env
-	terraform -chdir=$(TERRAFORM_DIR) destroy -auto-approve
+# ── Maintenance ────────────────────────────────────────────────────────────────
 
 output:
 	terraform -chdir=$(TERRAFORM_DIR) output
 
+destroy: check-env
+	terraform -chdir=$(TERRAFORM_DIR) destroy $(DEV_VARS)
+
+destroy-auto: check-env
+	terraform -chdir=$(TERRAFORM_DIR) destroy -auto-approve $(DEV_VARS)
+
 clean:
 	rm -rf $(TERRAFORM_DIR)/.terraform
-	rm -f $(TERRAFORM_DIR)/.terraform.lock.hcl
-	rm -f $(TERRAFORM_DIR)/terraform.tfstate
-	rm -f $(TERRAFORM_DIR)/terraform.tfstate.backup
+	rm -f  $(TERRAFORM_DIR)/.terraform.lock.hcl
+	rm -f  $(TERRAFORM_DIR)/terraform.tfstate
+	rm -f  $(TERRAFORM_DIR)/terraform.tfstate.backup
+
+# Repartir de zéro : supprime l'état local, réinitialise et applique en dev.
+# Les ressources existantes dans Snowflake sont ré-importées via les blocs import{}.
+restart: clean init apply-dev
