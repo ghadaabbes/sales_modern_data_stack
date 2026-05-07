@@ -1,0 +1,61 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "Données brutes ingérées depuis la source transactionnelle dans le schéma RAW de Snowflake."
+    database: DWH
+    schema: RAW
+    tables:
+      - name: ORDERS
+        description: "Table brute des commandes clients."
+        columns:
+          - name: ORDER_ID
+            description: "Identifiant unique de la commande."
+          - name: CUSTOMER_ID
+            description: "Identifiant du client."
+          - name: ORDER_DATE
+            description: "Date à laquelle la commande a été passée."
+          - name: AMOUNT
+            description: "Montant total de la commande en euros."
+          - name: STATUS
+            description: "Statut de la commande (completed, pending, cancelled, returned)."
+          - name: COUNTRY
+            description: "Pays du client."
+
+models:
+  - name: stg_orders
+    description: "Commandes nettoyées et filtrées depuis RAW.ORDERS. Supprime les lignes sans order_id."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: order_id
+        description: "Identifiant unique de la commande (PK)."
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: "Identifiant du client. Ne peut pas être nul."
+        tests:
+          - not_null
+      - name: order_date
+        description: "Date de la commande."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_of_type:
+              column_type: date
+      - name: amount
+        description: "Montant de la commande en euros."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: status
+        description: "Statut de la commande."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['completed', 'pending', 'cancelled', 'returned']
+      - name: country
+        description: "Pays du client."
+        tests:
+          - not_null

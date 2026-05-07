@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: fact_sales
+    description: "Table de faits des ventes. Une ligne par commande validée."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: order_id
+        description: "Identifiant unique de la commande (PK)."
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: "Référence au client ayant passé la commande."
+        tests:
+          - not_null
+      - name: order_date
+        description: "Date de la commande."
+        tests:
+          - not_null
+      - name: amount
+        description: "Montant de la commande en euros."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: status
+        description: "Statut de la commande."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['completed', 'pending', 'cancelled', 'returned']
+      - name: country
+        description: "Pays du client."
+        tests:
+          - not_null
+
+  - name: sales_daily_kpi
+    description: "Agrégation journalière des KPIs de vente par pays. Grain : 1 ligne par (order_date, country)."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: order_date
+        description: "Date de la commande."
+        tests:
+          - not_null
+      - name: country
+        description: "Pays du client."
+        tests:
+          - not_null
+      - name: total_orders
+        description: "Nombre distinct de commandes sur la journée."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+      - name: revenue
+        description: "Chiffre d'affaires total de la journée en euros."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: avg_order_value
+        description: "Panier moyen de la journée en euros."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0

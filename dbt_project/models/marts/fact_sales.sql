@@ -1,3 +1,10 @@
+{{
+  config(
+    materialized='table',
+    tags=['marts', 'sales']
+  )
+}}
+
 SELECT
   order_id,
   customer_id,
@@ -5,5 +12,4 @@ SELECT
   amount,
   status,
   country
-FROM {{ source('raw', 'ORDERS') }}
-WHERE order_id IS NOT NULL
+FROM {{ ref('stg_orders') }}

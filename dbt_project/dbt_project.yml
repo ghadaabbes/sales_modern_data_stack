@@ -5,12 +5,24 @@ config-version: 2
 profile: sales_modern_data_stack
 
 model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+docs-paths: ["docs"]
+
+on-run-start:
+  - "{{ log('Starting dbt run — ' ~ run_started_at, info=true) }}"
 
 models:
   sales_modern_data_stack:
     staging:
       +schema: STAGING
       +materialized: view
+      +tags: ["staging"]
+      +meta:
+        layer: staging
     marts:
       +schema: MARTS
       +materialized: table
+      +tags: ["marts"]
+      +meta:
+        layer: marts
