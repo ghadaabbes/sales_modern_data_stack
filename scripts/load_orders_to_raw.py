@@ -2,12 +2,12 @@ import csv
 import os
 import snowflake.connector
 
-ACCOUNT   = "GOERPYE-DR90600"
-USER      = "GHADAAB"
-PASSWORD  = os.environ.get("SNOWFLAKE_PASSWORD", "${SNOWFLAKE_PASSWORD}")
-ROLE      = "ACCOUNTADMIN"
-WAREHOUSE = "TRANSFORM_WH"
-DATABASE  = "DWH"
+ACCOUNT   = os.environ.get("SNOWFLAKE_ACCOUNT",   "GOERPYE-DR90600")
+USER      = os.environ.get("SNOWFLAKE_USER",      "GHADAAB")
+PASSWORD  = os.environ.get("SNOWFLAKE_PASSWORD")
+ROLE      = os.environ.get("SNOWFLAKE_ROLE",      "ACCOUNTADMIN")
+WAREHOUSE = os.environ.get("SNOWFLAKE_WAREHOUSE", "TRANSFORM_WH")
+DATABASE  = os.environ.get("SNOWFLAKE_DATABASE",  "DWH")
 SCHEMA    = "RAW"
 TABLE     = "ORDERS"
 
