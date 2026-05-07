@@ -1,7 +1,6 @@
 # ── Import des ressources existantes ──────────────────────────────────────────
-# Ces blocs import permettent à Terraform de reprendre la gestion de ressources
-# créées manuellement ou lors d'un premier run. À ne conserver que si l'état
-# local est vide (premier terraform apply après un make clean).
+# Ces blocs permettent à Terraform de reprendre des ressources déjà dans Snowflake.
+# À conserver — si la ressource est déjà dans l'état, Terraform ignore le bloc.
 
 import {
   to = snowflake_database.dwh
@@ -73,17 +72,17 @@ resource "snowflake_warehouse" "transform_wh" {
 
 # ── Role TRANSFORMER (prod) ────────────────────────────────────────────────────
 # Role à privilèges réduits utilisé en production (profiles.yml --target prod).
-# Contrairement à ACCOUNTADMIN, il n'a accès qu'à ce qui est nécessaire pour dbt.
+# Nom correct pour provider snowflake-labs/snowflake >= 1.0.0 : snowflake_account_role
 
-resource "snowflake_role" "transformer" {
+resource "snowflake_account_role" "transformer" {
   name    = "TRANSFORMER"
   comment = "Role de transformation dbt — utilisé en production uniquement."
 }
 
 # Usage sur le warehouse
-resource "snowflake_grant_privileges_to_role" "transformer_warehouse" {
-  role_name  = snowflake_role.transformer.name
-  privileges = ["USAGE"]
+resource "snowflake_grant_privileges_to_account_role" "transformer_warehouse" {
+  account_role_name = snowflake_account_role.transformer.name
+  privileges        = ["USAGE"]
 
   on_account_object {
     object_type = "WAREHOUSE"
@@ -92,9 +91,9 @@ resource "snowflake_grant_privileges_to_role" "transformer_warehouse" {
 }
 
 # Usage sur la database
-resource "snowflake_grant_privileges_to_role" "transformer_database" {
-  role_name  = snowflake_role.transformer.name
-  privileges = ["USAGE"]
+resource "snowflake_grant_privileges_to_account_role" "transformer_database" {
+  account_role_name = snowflake_account_role.transformer.name
+  privileges        = ["USAGE"]
 
   on_account_object {
     object_type = "DATABASE"
@@ -102,52 +101,40 @@ resource "snowflake_grant_privileges_to_role" "transformer_database" {
   }
 }
 
-# RAW : lecture seule (SELECT) — source dbt
-resource "snowflake_grant_privileges_to_role" "transformer_schema_raw" {
-  role_name  = snowflake_role.transformer.name
-  privileges = ["USAGE"]
+# RAW : lecture seule
+resource "snowflake_grant_privileges_to_account_role" "transformer_schema_raw" {
+  account_role_name = snowflake_account_role.transformer.name
+  privileges        = ["USAGE"]
 
   on_schema {
     schema_name = "\"${snowflake_database.dwh.name}\".\"${snowflake_schema.raw.name}\""
   }
 }
 
-resource "snowflake_grant_privileges_to_role" "transformer_tables_raw" {
-  role_name  = snowflake_role.transformer.name
-  privileges = ["SELECT"]
-
-  on_schema_object {
-    all {
-      object_type_plural = "TABLES"
-      in_schema          = "\"${snowflake_database.dwh.name}\".\"${snowflake_schema.raw.name}\""
-    }
-  }
-}
-
-# STAGING : lecture + création de vues (dbt crée les views stg_* et int_*)
-resource "snowflake_grant_privileges_to_role" "transformer_schema_staging" {
-  role_name  = snowflake_role.transformer.name
-  privileges = ["USAGE", "CREATE TABLE", "CREATE VIEW"]
+# STAGING : lecture + création de vues/tables
+resource "snowflake_grant_privileges_to_account_role" "transformer_schema_staging" {
+  account_role_name = snowflake_account_role.transformer.name
+  privileges        = ["USAGE", "CREATE TABLE", "CREATE VIEW"]
 
   on_schema {
     schema_name = "\"${snowflake_database.dwh.name}\".\"${snowflake_schema.staging.name}\""
   }
 }
 
-# MARTS : lecture + création de tables (dbt crée fact_*, agg_*, *_kpi)
-resource "snowflake_grant_privileges_to_role" "transformer_schema_marts" {
-  role_name  = snowflake_role.transformer.name
-  privileges = ["USAGE", "CREATE TABLE", "CREATE VIEW"]
+# MARTS : lecture + création de tables
+resource "snowflake_grant_privileges_to_account_role" "transformer_schema_marts" {
+  account_role_name = snowflake_account_role.transformer.name
+  privileges        = ["USAGE", "CREATE TABLE", "CREATE VIEW"]
 
   on_schema {
     schema_name = "\"${snowflake_database.dwh.name}\".\"${snowflake_schema.marts.name}\""
   }
 }
 
-# SNAPSHOTS : lecture + création de tables (dbt snapshot écrit ici)
-resource "snowflake_grant_privileges_to_role" "transformer_schema_snapshots" {
-  role_name  = snowflake_role.transformer.name
-  privileges = ["USAGE", "CREATE TABLE"]
+# SNAPSHOTS : lecture + création de tables
+resource "snowflake_grant_privileges_to_account_role" "transformer_schema_snapshots" {
+  account_role_name = snowflake_account_role.transformer.name
+  privileges        = ["USAGE", "CREATE TABLE"]
 
   on_schema {
     schema_name = "\"${snowflake_database.dwh.name}\".\"${snowflake_schema.snapshots.name}\""
@@ -178,5 +165,5 @@ output "warehouse_name" {
 
 output "transformer_role" {
   description = "Role prod à assigner aux utilisateurs de transformation."
-  value       = snowflake_role.transformer.name
+  value       = snowflake_account_role.transformer.name
 }
