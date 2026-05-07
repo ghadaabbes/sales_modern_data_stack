@@ -20,6 +20,12 @@ models:
       +tags: ["staging"]
       +meta:
         layer: staging
+    intermediate:
+      +schema: STAGING
+      +materialized: view
+      +tags: ["intermediate"]
+      +meta:
+        layer: intermediate
     marts:
       +schema: MARTS
       +materialized: table

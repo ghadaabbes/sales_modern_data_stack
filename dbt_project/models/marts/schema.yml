@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: fact_sales
-    description: "Table de faits des ventes. Une ligne par commande validée."
+    description: "Table de faits des ventes. Une ligne par commande. Enrichie avec dimensions temporelles et segmentation depuis int_orders_enriched."
     meta:
       owner: "data-team"
     columns:
@@ -12,37 +12,112 @@ models:
           - not_null
           - unique
       - name: customer_id
-        description: "Référence au client ayant passé la commande."
+        description: "Référence au client."
         tests:
           - not_null
       - name: order_date
         description: "Date de la commande."
         tests:
           - not_null
+      - name: order_year
+        description: "Année de la commande."
+      - name: order_month
+        description: "Mois de la commande."
+      - name: order_quarter
+        description: "Trimestre de la commande."
+      - name: day_of_week
+        description: "Jour de la semaine (convention Snowflake)."
+      - name: week_of_year
+        description: "Numéro de semaine dans l'année."
       - name: amount
         description: "Montant de la commande en euros."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
+      - name: amount_bucket
+        description: "Segmentation du montant : small, medium, large, premium."
+        tests:
+          - accepted_values:
+              values: ['small', 'medium', 'large', 'premium']
       - name: status
         description: "Statut de la commande."
         tests:
           - not_null
           - accepted_values:
               values: ['completed', 'pending', 'cancelled', 'returned']
+      - name: is_completed
+        description: "Flag 1 si commande completed, 0 sinon."
+        tests:
+          - not_null
       - name: country
         description: "Pays du client."
         tests:
           - not_null
 
+  - name: agg_customers
+    description: "Agrégation par client avec LTV, segmentation RFM simplifiée et taux de complétion. Grain : 1 ligne par customer_id."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: customer_id
+        description: "Identifiant unique du client (PK)."
+        tests:
+          - not_null
+          - unique
+      - name: total_orders
+        description: "Nombre total de commandes passées."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+      - name: lifetime_value
+        description: "Chiffre d'affaires total généré par le client (LTV) en euros."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: avg_order_value
+        description: "Panier moyen du client en euros."
+        tests:
+          - not_null
+      - name: first_order_date
+        description: "Date de la première commande du client."
+        tests:
+          - not_null
+      - name: last_order_date
+        description: "Date de la dernière commande du client."
+        tests:
+          - not_null
+      - name: customer_lifespan_days
+        description: "Nombre de jours entre la première et la dernière commande."
+      - name: countries_count
+        description: "Nombre de pays distincts depuis lesquels le client a commandé."
+      - name: completed_orders
+        description: "Nombre de commandes avec statut completed."
+      - name: non_completed_orders
+        description: "Nombre de commandes non complétées."
+      - name: days_since_last_order
+        description: "Jours écoulés depuis la dernière commande (recency)."
+      - name: customer_segment
+        description: "Segment client : one-time, occasional, regular, loyal, vip."
+        tests:
+          - accepted_values:
+              values: ['one-time', 'occasional', 'regular', 'loyal', 'vip']
+      - name: completion_rate_pct
+        description: "Pourcentage de commandes complétées sur le total."
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+
   - name: sales_daily_kpi
-    description: "Agrégation journalière des KPIs de vente par pays. Grain : 1 ligne par (order_date, country)."
+    description: "KPIs de vente agrégés par jour et pays avec window functions (running total, croissance J/J-1, ranking). Grain : 1 ligne par (order_date, country)."
     meta:
       owner: "data-team"
     columns:
       - name: order_date
-        description: "Date de la commande."
+        description: "Date de la journée."
         tests:
           - not_null
       - name: country
@@ -50,7 +125,7 @@ models:
         tests:
           - not_null
       - name: total_orders
-        description: "Nombre distinct de commandes sur la journée."
+        description: "Nombre de commandes distinctes sur la journée."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
@@ -62,8 +137,20 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
       - name: avg_order_value
-        description: "Panier moyen de la journée en euros."
+        description: "Panier moyen de la journée."
         tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
+      - name: completed_orders
+        description: "Nombre de commandes complétées sur la journée."
+      - name: revenue_running_total
+        description: "Cumul du revenue depuis le début de l'historique, par pays."
+      - name: revenue_prev_day
+        description: "Revenue du jour précédent pour le même pays."
+      - name: orders_prev_day
+        description: "Nombre de commandes du jour précédent pour le même pays."
+      - name: country_revenue_rank
+        description: "Classement du pays par revenue sur la journée (1 = meilleur)."
+      - name: revenue_growth_pct
+        description: "Croissance du revenue par rapport au jour précédent en %."
+      - name: orders_growth_pct
+        description: "Croissance des commandes par rapport au jour précédent en %."
