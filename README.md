@@ -15,27 +15,52 @@ End-to-end data pipeline for sales analytics. Starts from a raw CSV file and del
 
 ---
 
-## dbt Architecture — 3 layers
+## dbt Architecture — 3 layers + CDC
 
 ```
-RAW.ORDERS (Snowflake)
- └── stg_orders              [STAGING · view]   cleaning, filtering
-       └── int_orders_enriched [STAGING · view]   time dimensions, segmentation
-             ├── fact_sales        [MARTS · table]  central fact table
-             │     ├── agg_customers     [MARTS · table]  LTV, RFM customer segmentation
-             │     └── sales_daily_kpi   [MARTS · table]  daily KPIs, window functions
-             └── orders_snapshot   [SNAPSHOTS]      SCD Type 2 on status + amount
+RAW.ORDERS (Snowflake base table)
+ │
+ ├── ORDERS_STREAM (Snowflake CDC Stream)
+ │       └── stg_orders_cdc  [STAGING · stream_merge]  real MERGE via CDC
+ │
+ └── stg_orders              [STAGING · view]           cleaning, filtering
+       └── int_orders_enriched [STAGING · view]         time dimensions, segmentation
+             ├── fact_sales        [MARTS · incremental]  central fact table
+             │     ├── agg_customers     [MARTS · incremental]  LTV, RFM segmentation
+             │     └── sales_daily_kpi   [MARTS · incremental]  daily KPIs, window functions
+             └── orders_snapshot   [SNAPSHOTS]              SCD Type 2 on status + amount
 ```
 
 ### Models in detail
 
-| Model | Layer | Grain | Description |
-|-------|-------|-------|-------------|
-| `stg_orders` | Staging | 1 order | Cleaning and filtering from RAW.ORDERS |
-| `int_orders_enriched` | Intermediate | 1 order | `order_year/month/quarter`, `day_of_week`, `amount_bucket`, `is_completed` |
-| `fact_sales` | Marts | 1 order | Enriched fact table, base for all marts |
-| `agg_customers` | Marts | 1 customer | LTV, avg order value, RFM segment, completion rate |
-| `sales_daily_kpi` | Marts | (date, country) | Revenue, running total, day-over-day growth, country ranking |
+| Model | Layer | Materialization | Grain | Description |
+|-------|-------|-----------------|-------|-------------|
+| `stg_orders` | Staging | view | 1 order | Cleaning and filtering from RAW.ORDERS |
+| `stg_orders_cdc` | Staging | **stream_merge** | 1 order | Real CDC via Snowflake Stream + MERGE |
+| `int_orders_enriched` | Intermediate | view | 1 order | `order_year/month/quarter`, `day_of_week`, `amount_bucket`, `is_completed` |
+| `fact_sales` | Marts | **incremental** | 1 order | Enriched fact table — 3-day lookback, unique_key: `order_id` |
+| `agg_customers` | Marts | **incremental** | 1 customer | LTV, RFM segment — recomputes only changed customers |
+| `sales_daily_kpi` | Marts | **incremental** | (date, country) | KPIs + window functions — union pattern for correct running totals |
+
+### Incremental strategy per model
+
+| Model | unique_key | Strategy |
+|-------|------------|----------|
+| `fact_sales` | `order_id` | 3-day lookback — handles late-arriving data |
+| `agg_customers` | `customer_id` | Recomputes only customers with recent activity, full history for LTV |
+| `sales_daily_kpi` | `(order_date, country)` | Union `{{ this }}` + new rows — window functions always see full history |
+
+### CDC Pipeline (Snowflake Stream + MERGE)
+
+`stg_orders_cdc` uses a **custom `stream_merge` materialization** backed by `DWH.RAW.ORDERS_STREAM`:
+
+| Stream event | MERGE action |
+|-------------|--------------|
+| `METADATA$ACTION = 'INSERT'` + `ISUPDATE = FALSE` | `INSERT` new row |
+| `METADATA$ACTION = 'INSERT'` + `ISUPDATE = TRUE` | `UPDATE SET` existing row |
+| `METADATA$ACTION = 'DELETE'` + `ISUPDATE = FALSE` | `DELETE` row |
+
+Metadata columns added automatically: `_cdc_action`, `_loaded_at`.
 
 ### SCD Type 2 Snapshot
 
@@ -122,9 +147,11 @@ dbt run --target prod
 │   load_orders_to_raw → dbt run → dbt snapshot → dbt test   │
 │                                                             │
 │   dbt run builds in order:                                  │
+│     stg_orders_cdc (CDC stream MERGE)                       │
 │     stg_orders → int_orders_enriched                        │
-│       → fact_sales → agg_customers                          │
-│                    → sales_daily_kpi                        │
+│       → fact_sales (incremental)                            │
+│           → agg_customers (incremental)                     │
+│           → sales_daily_kpi (incremental)                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -145,28 +172,31 @@ dbt run --target prod
 │   ├── models/
 │   │   ├── staging/
 │   │   │   ├── stg_orders.sql
-│   │   │   └── schema.yml          # sources + tests + freshness
+│   │   │   ├── stg_orders_cdc.sql      # CDC model — stream_merge materialization
+│   │   │   └── schema.yml              # sources + tests + freshness + CDC doc
 │   │   ├── intermediate/
 │   │   │   ├── int_orders_enriched.sql
 │   │   │   └── schema.yml
 │   │   └── marts/
-│   │       ├── fact_sales.sql
-│   │       ├── agg_customers.sql
-│   │       ├── sales_daily_kpi.sql
+│   │       ├── fact_sales.sql          # incremental (unique_key: order_id)
+│   │       ├── agg_customers.sql       # incremental (unique_key: customer_id)
+│   │       ├── sales_daily_kpi.sql     # incremental (unique_key: order_date+country)
 │   │       └── schema.yml
 │   ├── snapshots/
-│   │   └── orders_snapshot.sql     # SCD Type 2
-│   ├── tests/                      # Cross-model singular tests
+│   │   └── orders_snapshot.sql         # SCD Type 2
+│   ├── tests/                          # Cross-model singular tests
 │   │   ├── assert_no_duplicate_daily_kpi.sql
 │   │   ├── assert_revenue_positive.sql
 │   │   ├── assert_ltv_equals_sum_of_orders.sql
 │   │   ├── assert_running_total_monotonic.sql
 │   │   └── assert_all_customers_in_agg.sql
 │   ├── docs/
-│   │   └── overview.md             # dbt doc blocks
+│   │   └── overview.md                 # dbt doc blocks
 │   ├── macros/
-│   │   └── generate_schema_name.sql
-│   ├── packages.yml                # dbt-utils + dbt-expectations
+│   │   ├── generate_schema_name.sql
+│   │   └── materializations/
+│   │       └── stream_merge.sql        # custom CDC materialization (Stream + MERGE)
+│   ├── packages.yml                    # dbt-utils + dbt-expectations
 │   └── dbt_project.yml
 ├── airflow/
 │   └── dags/
@@ -223,11 +253,15 @@ python scripts/load_orders_to_raw.py
 
 ```powershell
 Set-Location dbt_project
-dbt deps        # install dbt-utils + dbt-expectations
-dbt run         # create all tables/views in Snowflake
-dbt snapshot    # create orders_snapshot (SCD Type 2)
-dbt test        # run all quality tests
+dbt deps                    # install dbt-utils + dbt-expectations
+dbt run --full-refresh      # first run: full load of all models (required)
+dbt snapshot                # create orders_snapshot (SCD Type 2)
+dbt test                    # run all quality tests
 ```
+
+> **Important**: incremental models (`fact_sales`, `agg_customers`, `sales_daily_kpi`, `stg_orders_cdc`)
+> require `--full-refresh` on the very first run to create the target tables.
+> Subsequent daily runs use `dbt run` (no flag) to process only deltas.
 
 ### 6. Start Airflow
 
@@ -256,10 +290,11 @@ dbt docs serve
 | A SQL model (`*.sql`) | `dbt run` |
 | A single model | `dbt run -s model_name` |
 | A model and its dependants | `dbt run -s +model_name` |
+| An incremental model schema (new column) | `dbt run -s model_name --full-refresh` |
 | Tests (`schema.yml`, `tests/`) | `dbt test` |
 | Snapshot | `dbt snapshot` |
 | `packages.yml` | `dbt deps` then `dbt run` |
-| New Snowflake schema / role / warehouse | `terraform apply` |
+| New Snowflake schema / role / warehouse / stream | `terraform apply` |
 | Python script or Airflow DAG | Nothing — Airflow handles it in prod |
 
 > **Rule**: Terraform = infrastructure, dbt = data, Airflow = automation.
@@ -269,24 +304,26 @@ dbt docs serve
 ## Useful dbt Commands
 
 ```powershell
-# Build all models (dev by default)
-dbt run
+# ── First run (mandatory) ─────────────────────────────────────────────────────
+dbt run --full-refresh          # full load of all models, creates incremental tables
 
-# Build in prod
-dbt run --target prod
+# ── Daily runs (incremental — deltas only) ────────────────────────────────────
+dbt run                         # process only new/changed data
+dbt run --target prod           # same in prod (uses TRANSFORMER role, 8 threads)
 
-# Target a single model and its dependencies
-dbt run -s +fact_sales
+# ── Targeting specific models ─────────────────────────────────────────────────
+dbt run -s stg_orders_cdc       # run CDC model only (reads from ORDERS_STREAM)
+dbt run -s +fact_sales          # fact_sales and all its upstream dependencies
+dbt run -s fact_sales+          # fact_sales and all downstream models
 
-# Run all tests (generic + singular)
-dbt test
+# ── Schema changes on incremental models ─────────────────────────────────────
+dbt run -s fact_sales --full-refresh      # rebuild from scratch after adding a column
 
-# Check source freshness
-dbt source freshness
+# ── Quality and observability ─────────────────────────────────────────────────
+dbt test                        # run all tests (generic + singular)
+dbt source freshness            # check RAW.ORDERS data recency
+dbt snapshot                    # run SCD Type 2 (orders_snapshot)
 
-# Run SCD Type 2 snapshot
-dbt snapshot
-
-# Interactive documentation
-dbt docs generate; dbt docs serve
+# ── Documentation ─────────────────────────────────────────────────────────────
+dbt docs generate; dbt docs serve   # → http://localhost:8080
 ```
