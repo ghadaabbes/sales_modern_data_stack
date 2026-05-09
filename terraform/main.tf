@@ -141,6 +141,32 @@ resource "snowflake_grant_privileges_to_account_role" "transformer_schema_snapsh
   }
 }
 
+# ── CDC Stream ────────────────────────────────────────────────────────────────
+# Captures every INSERT, UPDATE and DELETE on RAW.ORDERS.
+# dbt reads this stream via the custom stream_merge materialization to apply
+# a real MERGE (not a full table rebuild) into STAGING.STG_ORDERS_CDC.
+
+resource "snowflake_stream_on_table" "orders_stream" {
+  name     = "ORDERS_STREAM"
+  database = snowflake_database.dwh.name
+  schema   = snowflake_schema.raw.name
+  table    = "\"${snowflake_database.dwh.name}\".\"${snowflake_schema.raw.name}\".\"ORDERS\""
+
+  append_only = false # capture updates and deletes, not just inserts
+  comment     = "CDC stream on RAW.ORDERS — feeds STG_ORDERS_CDC via MERGE."
+}
+
+# Grant SELECT on the stream to the TRANSFORMER role (prod)
+resource "snowflake_grant_privileges_to_account_role" "transformer_stream_orders" {
+  account_role_name = snowflake_account_role.transformer.name
+  privileges        = ["SELECT"]
+
+  on_schema_object {
+    object_type = "STREAM"
+    object_name = "\"${snowflake_database.dwh.name}\".\"${snowflake_schema.raw.name}\".\"ORDERS_STREAM\""
+  }
+}
+
 # ── Outputs ────────────────────────────────────────────────────────────────────
 
 output "database_name" {
