@@ -29,7 +29,10 @@ models:
         layer: intermediate
     marts:
       +schema: MARTS
-      +materialized: table
       +tags: ["marts"]
       +meta:
         layer: marts
+      # Each mart model declares its own materialization:
+      # fact_sales      → incremental (unique_key: order_id)
+      # agg_customers   → incremental (unique_key: customer_id)
+      # sales_daily_kpi → incremental (unique_key: order_date + country)
