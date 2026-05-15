@@ -15,32 +15,68 @@ End-to-end data pipeline for sales analytics. Starts from a raw CSV file and del
 
 ---
 
-## dbt Architecture — 3 layers + CDC
+## dbt Architecture — Star Schema + CDC
 
 ```
 RAW.ORDERS (Snowflake base table)
  │
  ├── ORDERS_STREAM (Snowflake CDC Stream)
- │       └── stg_orders_cdc  [STAGING · stream_merge]  real MERGE via CDC
+ │       └── stg_orders_cdc      [STAGING · stream_merge]  real MERGE via CDC
  │
- └── stg_orders              [STAGING · view]           cleaning, filtering
-       └── int_orders_enriched [STAGING · view]         time dimensions, segmentation
-             ├── fact_sales        [MARTS · incremental]  central fact table
-             │     ├── agg_customers     [MARTS · incremental]  LTV, RFM segmentation
-             │     └── sales_daily_kpi   [MARTS · incremental]  daily KPIs, window functions
-             └── orders_snapshot   [SNAPSHOTS]              SCD Type 2 on status + amount
+ └── stg_orders                  [STAGING · view]   cleaning, filtering
+       └── int_orders_enriched   [STAGING · view]   time dimensions, segmentation
+             │
+             ├── dim_customer    [MARTS · table]    customer_id, country
+             ├── dim_date        [MARTS · table]    order_date, year, month, quarter…
+             ├── dim_status      [MARTS · table]    status, is_completed
+             ├── dim_amount_bucket [MARTS · table]  amount_bucket, min/max thresholds
+             │
+             └── fact_sales      [MARTS · incremental]  FK only + amount
+                   ├── agg_customers   [MARTS · incremental]  LTV, RFM (joins dims)
+                   └── sales_daily_kpi [MARTS · incremental]  KPIs, window functions (joins dims)
+
+orders_snapshot                  [SNAPSHOTS]        SCD Type 2 on status + amount
+```
+
+### Star schema
+
+```
+         dim_customer          dim_date
+        (customer_id PK        (order_date PK
+         country)               year, month
+              │                 quarter, week)
+              │ FK                    │ FK
+              └──────┐  ┌────────────┘
+                     ▼  ▼
+                   fact_sales
+                   (order_id PK
+                    customer_id FK
+                    order_date  FK
+                    status      FK
+                    amount_bucket FK
+                    amount ← only metric)
+                     ▲  ▲
+              ┌──────┘  └────────────┐
+              │ FK                   │ FK
+         dim_status             dim_amount_bucket
+        (status PK              (amount_bucket PK
+         is_completed)           min_amount, max_amount)
 ```
 
 ### Models in detail
 
-| Model | Layer | Materialization | Grain | Description |
-|-------|-------|-----------------|-------|-------------|
+| Model | Type | Materialization | Grain | Description |
+|-------|------|-----------------|-------|-------------|
 | `stg_orders` | Staging | view | 1 order | Cleaning and filtering from RAW.ORDERS |
 | `stg_orders_cdc` | Staging | **stream_merge** | 1 order | Real CDC via Snowflake Stream + MERGE |
-| `int_orders_enriched` | Intermediate | view | 1 order | `order_year/month/quarter`, `day_of_week`, `amount_bucket`, `is_completed` |
-| `fact_sales` | Marts | **incremental** | 1 order | Enriched fact table — 3-day lookback, unique_key: `order_id` |
-| `agg_customers` | Marts | **incremental** | 1 customer | LTV, RFM segment — recomputes only changed customers |
-| `sales_daily_kpi` | Marts | **incremental** | (date, country) | KPIs + window functions — union pattern for correct running totals |
+| `int_orders_enriched` | Intermediate | view | 1 order | Time dimensions, `amount_bucket`, `is_completed` |
+| `dim_customer` | Dimension | table | 1 customer | `customer_id`, `country` |
+| `dim_date` | Dimension | table | 1 date | Date attributes: year, month, quarter, week |
+| `dim_status` | Dimension | table | 1 status | `status`, `is_completed` flag |
+| `dim_amount_bucket` | Dimension | table | 1 bucket | Bucket label + min/max thresholds |
+| `fact_sales` | Fact | **incremental** | 1 order | FK only + `amount` — 3-day lookback |
+| `agg_customers` | Aggregate | **incremental** | 1 customer | LTV, RFM — joins `dim_customer`, `dim_status` |
+| `sales_daily_kpi` | Aggregate | **incremental** | (date, country) | KPIs + window functions — joins dims |
 
 ### Incremental strategy per model
 
@@ -49,6 +85,15 @@ RAW.ORDERS (Snowflake base table)
 | `fact_sales` | `order_id` | 3-day lookback — handles late-arriving data |
 | `agg_customers` | `customer_id` | Recomputes only customers with recent activity, full history for LTV |
 | `sales_daily_kpi` | `(order_date, country)` | Union `{{ this }}` + new rows — window functions always see full history |
+
+### Referential integrity tests (relationships)
+
+```yaml
+fact_sales.customer_id   → dim_customer.customer_id
+fact_sales.order_date    → dim_date.order_date
+fact_sales.status        → dim_status.status
+fact_sales.amount_bucket → dim_amount_bucket.amount_bucket
+```
 
 ### CDC Pipeline (Snowflake Stream + MERGE)
 

@@ -7,25 +7,19 @@
   )
 }}
 
+-- Star schema fact table — grain: 1 row = 1 order.
+-- Contains only foreign keys and the amount metric.
+-- All descriptive attributes live in dimension tables.
 SELECT
   order_id,
-  customer_id,
-  order_date,
-  order_year,
-  order_month,
-  order_quarter,
-  day_of_week,
-  week_of_year,
-  amount,
-  amount_bucket,
-  status,
-  is_completed,
-  country
+  customer_id,   -- FK → dim_customer
+  order_date,    -- FK → dim_date
+  status,        -- FK → dim_status
+  amount_bucket, -- FK → dim_amount_bucket
+  amount
 FROM {{ ref('int_orders_enriched') }}
 
 {% if is_incremental() %}
--- 3-day lookback to handle late-arriving or updated orders.
--- On first run (full refresh), all rows are loaded.
 WHERE order_date >= (
   SELECT DATEADD('day', -3, MAX(order_date)) FROM {{ this }}
 )

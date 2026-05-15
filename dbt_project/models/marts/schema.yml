@@ -1,45 +1,127 @@
 version: 2
 
 models:
+
+  # ── Dimension tables ────────────────────────────────────────────────────────
+
+  - name: dim_customer
+    description: "Customer dimension. One row per customer_id. Holds country — not stored on the fact table."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: customer_id
+        description: "Unique customer identifier (PK)."
+        tests:
+          - not_null
+          - unique
+      - name: country
+        description: "Country of the customer."
+        tests:
+          - not_null
+
+  - name: dim_date
+    description: "Date dimension. One row per distinct order date. Carries all derived time attributes."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: order_date
+        description: "Calendar date (PK)."
+        tests:
+          - not_null
+          - unique
+      - name: order_year
+        description: "Year (DATE_TRUNC year)."
+      - name: order_month
+        description: "Month (DATE_TRUNC month)."
+      - name: order_quarter
+        description: "Quarter (DATE_TRUNC quarter)."
+      - name: day_of_week
+        description: "Day of week (1=Sunday … 7=Saturday, Snowflake convention)."
+      - name: week_of_year
+        description: "ISO week number within the year."
+
+  - name: dim_status
+    description: "Status dimension. One row per distinct order status. Single source of truth for is_completed."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: status
+        description: "Order status label (PK)."
+        tests:
+          - not_null
+          - unique
+          - accepted_values:
+              values: ['completed', 'pending', 'cancelled', 'returned']
+      - name: is_completed
+        description: "1 if status is completed, 0 otherwise."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+
+  - name: dim_amount_bucket
+    description: "Amount bucket dimension. One row per bucket with min/max thresholds."
+    meta:
+      owner: "data-team"
+    columns:
+      - name: amount_bucket
+        description: "Bucket label (PK): small / medium / large / premium."
+        tests:
+          - not_null
+          - unique
+          - accepted_values:
+              values: ['small', 'medium', 'large', 'premium']
+      - name: min_amount
+        description: "Lower threshold of the bucket in euros."
+      - name: max_amount
+        description: "Upper threshold of the bucket in euros (NULL for premium)."
+
+  # ── Fact table ───────────────────────────────────────────────────────────────
+
   - name: fact_sales
     description: "{{ doc('fact_sales') }}"
     meta:
       owner: "data-team"
     columns:
       - name: order_id
-        description: "Identifiant unique de la commande (PK)."
+        description: "Unique order identifier (PK)."
         tests:
           - not_null
           - unique
       - name: customer_id
-        description: "Référence au client."
+        description: "FK → dim_customer.customer_id"
         tests:
           - not_null
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_id
       - name: order_date
-        description: "Date de la commande."
+        description: "FK → dim_date.order_date"
         tests:
           - not_null
-      - name: order_year
-        description: "Année de la commande."
-      - name: order_month
-        description: "Mois de la commande."
-      - name: order_quarter
-        description: "Trimestre de la commande."
-      - name: day_of_week
-        description: "Jour de la semaine (convention Snowflake)."
-      - name: week_of_year
-        description: "Numéro de semaine dans l'année."
+          - relationships:
+              to: ref('dim_date')
+              field: order_date
+      - name: status
+        description: "FK → dim_status.status"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_status')
+              field: status
+      - name: amount_bucket
+        description: "FK → dim_amount_bucket.amount_bucket"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_amount_bucket')
+              field: amount_bucket
       - name: amount
-        description: "Montant de la commande en euros."
+        description: "Order amount in euros — the only metric on the fact table."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
-      - name: amount_bucket
-        description: "Segmentation du montant : small, medium, large, premium."
-        tests:
-          - accepted_values:
-              values: ['small', 'medium', 'large', 'premium']
       - name: status
         description: "Statut de la commande."
         tests:
